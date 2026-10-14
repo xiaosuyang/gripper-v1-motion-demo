@@ -53,7 +53,7 @@
   </div>
   <div class="row">
     <label>开口</label>
-    <input type="range" id="openR" min="0" max="70" step="0.1" value="30.2">
+    <input type="range" id="openR" min="0" max="91" step="0.1" value="30.2">
   </div>
   <div class="row">
     <button class="btn on" id="playB">⏸ 暂停</button>
@@ -63,9 +63,9 @@
   </div>
   <div class="legend">
     <span><i style="background:#b9a7d6"></i>壳体/齿轮条盖(静止)</span>
-    <span><i style="background:#8a93a6"></i>导轨/法兰/转接件</span>
+    <span><i style="background:#8a93a6"></i>滑块/法兰/转接件(静止)</span>
     <span><i style="background:#39424c"></i>电机/传感器板</span>
-    <span><i style="background:#e9e9f0"></i>手指+齿条+齿条外盖(运动)</span>
+    <span><i style="background:#e9e9f0"></i>手指+齿条+导轨+齿条外盖(运动)</span>
     <span><i style="background:#c9a227"></i>0.5模齿轮(旋转)</span>
   </div>
 </div>
@@ -86,8 +86,8 @@ var GROUPS = [
   {f:'stl/right.stl', c:0xe9e9f0, op:1.0,  name:'right'},
   {f:'stl/gear.stl',  c:0xc9a227, op:1.0,  name:'gear'}
 ];
-// 模型位姿开口 30.2mm；δ∈[-15.1, +20]，开口 = 30.2 + 2δ
-var OPEN0 = 30.2, DMIN = -15.1, DMAX = 20.0, RPITCH = 10.0;
+// 模型位姿开口 30.2mm；δ∈[-15.1, +30.5]，开口 = 30.2 + 2δ（上限由齿条内端脱离齿轮啮合决定）
+var OPEN0 = 30.2, DMIN = -15.1, DMAX = 30.5, RPITCH = 10.0;
 
 var app = document.getElementById('app');
 var renderer = new THREE.WebGLRenderer({antialias:true, alpha:false});
