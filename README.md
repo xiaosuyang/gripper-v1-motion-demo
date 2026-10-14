@@ -31,12 +31,13 @@ stl/*.stl       6 组二进制 STL（OpenCascade 三角化，线性弦高 0.18 m
 
 ```bash
 pip install cadquery-ocp
-python dump_groups.py     # 由 STEP 生成 包围盒→运动分组 映射 groups.json
-python export_ocp.py      # 按分组三角化并写出 stl/*.stl
+python tools/dump_groups.py     # 由 STEP 生成 包围盒→运动分组 映射 tools/groups.json
+python tools/export_ocp.py      # 按分组三角化并写出 stl/*.stl
 ```
 
-分组规则见 `export_stl.py` 中的 `classify()`（壳体/固定盖板、静止结构、电机与 PCB、
-左右手指运动件、齿轮）。注意：gmsh 无法剖分该模型中的周期（闭合）B 样条曲面，故不使用 gmsh。
+分组规则见 `tools/export_stl.py` 中的 `classify()`（壳体/固定盖板、静止结构、电机与 PCB、
+左右手指运动件、齿轮）。STEP 文件（53 MB）不入仓库，需自备。
+注意：gmsh 无法剖分该模型中的周期（闭合）B 样条曲面，故不使用 gmsh。
 
 ## 运动学约定
 
