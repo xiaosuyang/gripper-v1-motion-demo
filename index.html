@@ -1,0 +1,316 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+<title>力控夹爪 V1.0 · 开闭运动演示</title>
+<style>
+  :root{
+    --bg:#12141a; --panel:rgba(22,25,33,.82); --line:rgba(255,255,255,.10);
+    --txt:#e8eaf0; --dim:#9aa2b1; --acc:#b9a7d6; --acc2:#7fd1c0;
+  }
+  *{box-sizing:border-box; -webkit-tap-highlight-color:transparent}
+  html,body{margin:0;height:100%;overflow:hidden;background:var(--bg);color:var(--txt);
+    font:14px/1.55 "Segoe UI","Microsoft YaHei",system-ui,sans-serif}
+  #app{position:fixed;inset:0}
+  canvas{display:block;outline:none}
+  .hud{position:fixed;left:16px;top:16px;z-index:5;background:var(--panel);
+    border:1px solid var(--line);border-radius:14px;padding:14px 16px;backdrop-filter:blur(10px);
+    max-width:330px}
+  .hud h1{margin:0 0 2px;font-size:16px;font-weight:650;letter-spacing:.3px}
+  .hud .sub{color:var(--dim);font-size:12px;margin-bottom:10px}
+  .row{display:flex;align-items:center;gap:10px;margin:9px 0}
+  .row label{color:var(--dim);font-size:12px;min-width:52px}
+  input[type=range]{flex:1;accent-color:var(--acc);height:22px}
+  .btn{background:rgba(255,255,255,.07);border:1px solid var(--line);color:var(--txt);
+    border-radius:9px;padding:6px 11px;font-size:12.5px;cursor:pointer;transition:.15s}
+  .btn:hover{background:rgba(255,255,255,.14)}
+  .btn.on{background:var(--acc);border-color:var(--acc);color:#1a1626;font-weight:600}
+  .read{display:flex;gap:18px;margin:4px 0 10px}
+  .read .v{font-size:26px;font-weight:700;font-variant-numeric:tabular-nums;color:var(--acc2)}
+  .read .u{font-size:12px;color:var(--dim)}
+  .legend{display:flex;flex-wrap:wrap;gap:6px 12px;margin-top:8px;font-size:11.5px;color:var(--dim)}
+  .legend i{display:inline-block;width:10px;height:10px;border-radius:3px;margin-right:5px;vertical-align:-1px}
+  .tip{position:fixed;right:16px;bottom:14px;z-index:5;color:var(--dim);font-size:11.5px;
+    background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:7px 11px}
+  #load{position:fixed;inset:0;display:flex;align-items:center;justify-content:center;
+    background:var(--bg);z-index:20;flex-direction:column;gap:14px}
+  #load .bar{width:220px;height:4px;border-radius:2px;background:rgba(255,255,255,.12);overflow:hidden}
+  #load .bar i{display:block;height:100%;width:0%;background:var(--acc);transition:width .25s}
+  #load .t{color:var(--dim);font-size:12.5px}
+  @media (max-width:640px){ .hud{max-width:calc(100vw - 32px)} .read .v{font-size:21px} }
+</style>
+</head>
+<body>
+<div id="app"></div>
+
+<div class="hud">
+  <h1>力控夹爪 V1.0 · 开闭运动演示</h1>
+  <div class="sub">几何取自 装配体-左手.STEP（真实模型，非示意）</div>
+  <div class="read">
+    <div><span class="v" id="openV">30.2</span> <span class="u">mm 开口</span></div>
+    <div><span class="v" id="strokeV">0.0</span> <span class="u">mm 单侧行程</span></div>
+  </div>
+  <div class="row">
+    <label>开口</label>
+    <input type="range" id="openR" min="0" max="70" step="0.1" value="30.2">
+  </div>
+  <div class="row">
+    <button class="btn on" id="playB">⏸ 暂停</button>
+    <button class="btn" id="rotB">自动转视角</button>
+    <button class="btn on" id="xrayB">外壳半透明</button>
+    <button class="btn" id="resetB">复位视角</button>
+  </div>
+  <div class="legend">
+    <span><i style="background:#b9a7d6"></i>壳体/盖板</span>
+    <span><i style="background:#8a93a6"></i>导轨/法兰/转接件</span>
+    <span><i style="background:#39424c"></i>电机/传感器板</span>
+    <span><i style="background:#e9e9f0"></i>手指组件(运动)</span>
+    <span><i style="background:#c9a227"></i>0.5模齿轮(旋转)</span>
+  </div>
+</div>
+
+<div class="tip">拖拽任意旋转（可翻越顶/底）· 滚轮/双指缩放 · Shift 或右键拖拽平移 · 双击复位</div>
+
+<div id="load"><div class="t" id="loadT">正在载入几何…</div><div class="bar"><i id="loadB"></i></div></div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script>
+(function(){
+'use strict';
+var GROUPS = [
+  {f:'stl/shell.stl', c:0xb9a7d6, op:0.22, name:'shell'},
+  {f:'stl/frame.stl', c:0x8a93a6, op:1.0,  name:'frame'},
+  {f:'stl/elec.stl',  c:0x39424c, op:1.0,  name:'elec'},
+  {f:'stl/left.stl',  c:0xe9e9f0, op:1.0,  name:'left'},
+  {f:'stl/right.stl', c:0xe9e9f0, op:1.0,  name:'right'},
+  {f:'stl/gear.stl',  c:0xc9a227, op:1.0,  name:'gear'}
+];
+// 模型位姿开口 30.2mm；δ∈[-15.1, +20]，开口 = 30.2 + 2δ
+var OPEN0 = 30.2, DMIN = -15.1, DMAX = 20.0, RPITCH = 10.0;
+
+var app = document.getElementById('app');
+var renderer = new THREE.WebGLRenderer({antialias:true, alpha:false});
+renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+renderer.setSize(innerWidth, innerHeight);
+app.appendChild(renderer.domElement);
+
+var scene = new THREE.Scene();
+scene.background = new THREE.Color(0x12141a);
+scene.fog = new THREE.Fog(0x12141a, 700, 1600);
+
+var camera = new THREE.PerspectiveCamera(42, innerWidth/innerHeight, 1, 5000);
+
+scene.add(new THREE.HemisphereLight(0xdfe6ff, 0x2a2620, 0.85));
+var d1 = new THREE.DirectionalLight(0xffffff, 0.75); d1.position.set(220, 320, 260); scene.add(d1);
+var d2 = new THREE.DirectionalLight(0xbfd0ff, 0.35); d2.position.set(-260, -120, -220); scene.add(d2);
+
+var grid = new THREE.GridHelper(600, 30, 0x2a2f3a, 0x1c2029);
+grid.position.y = -140; scene.add(grid);
+
+// ---------- 自研轨迹球控制（四元数，无俯仰夹限，可任意翻转） ----------
+var UP = new THREE.Vector3(0, 1, 0);
+var ctl = {target:new THREE.Vector3(0,0,0), r:430, minR:60, maxR:1600,
+           q:new THREE.Quaternion(), q0:new THREE.Quaternion()};
+(function initQ(){
+  var s = Math.sin(1.15), dir = new THREE.Vector3(s*Math.sin(0.85), Math.cos(1.15), s*Math.cos(0.85));
+  var m4 = new THREE.Matrix4().lookAt(dir, new THREE.Vector3(0,0,0), UP);
+  ctl.q.setFromRotationMatrix(m4); ctl.q0.copy(ctl.q);
+})();
+function applyCam(){
+  var off = new THREE.Vector3(0,0,ctl.r).applyQuaternion(ctl.q);
+  camera.position.copy(ctl.target).add(off);
+  camera.quaternion.copy(ctl.q);
+}
+var drag = null;
+var el = renderer.domElement;
+el.addEventListener('pointerdown', function(e){
+  drag = {x:e.clientX, y:e.clientY, pan:e.shiftKey || e.button===2};
+  el.setPointerCapture(e.pointerId);
+});
+el.addEventListener('pointermove', function(e){
+  if(!drag) return;
+  var dx = e.clientX-drag.x, dy = e.clientY-drag.y; drag.x = e.clientX; drag.y = e.clientY;
+  if(drag.pan){
+    var k = ctl.r*0.0011;
+    var right = new THREE.Vector3(1,0,0).applyQuaternion(ctl.q);
+    var up    = new THREE.Vector3(0,1,0).applyQuaternion(ctl.q);
+    ctl.target.addScaledVector(right, -dx*k).addScaledVector(up, dy*k);
+  }else{
+    var len = Math.sqrt(dx*dx + dy*dy);
+    if(len > 0){
+      // 屏幕空间拖拽方向 -> 世界空间旋转轴（相机空间 (-dy,-dx,0)）
+      var axis = new THREE.Vector3(-dy, -dx, 0).normalize().applyQuaternion(ctl.q);
+      ctl.q.premultiply(new THREE.Quaternion().setFromAxisAngle(axis, len*0.0062));
+    }
+  }
+  applyCam();
+});
+addEventListener('pointerup', function(){ drag = null; });
+el.addEventListener('contextmenu', function(e){ e.preventDefault(); });
+el.addEventListener('dblclick', function(){
+  ctl.target.set(0,0,0); ctl.r = 430; ctl.q.copy(ctl.q0); applyCam();
+});
+el.addEventListener('wheel', function(e){
+  e.preventDefault();
+  ctl.r *= Math.pow(1.0015, e.deltaY);
+  ctl.r = Math.max(ctl.minR, Math.min(ctl.maxR, ctl.r));
+  applyCam();
+}, {passive:false});
+// 触摸双指缩放
+var pinch = null;
+el.addEventListener('touchstart', function(e){ if(e.touches.length===2){ pinch = dist(e); } }, {passive:true});
+el.addEventListener('touchmove', function(e){
+  if(e.touches.length===2 && pinch){
+    var d = dist(e); ctl.r *= pinch/d; ctl.r = Math.max(ctl.minR, Math.min(ctl.maxR, ctl.r));
+    pinch = d; applyCam(); e.preventDefault();
+  }
+}, {passive:false});
+function dist(e){ var a=e.touches[0], b=e.touches[1]; return Math.hypot(a.clientX-b.clientX, a.clientY-b.clientY); }
+
+// ---------- 二进制 STL 解析 ----------
+function parseSTL(buf){
+  var dv = new DataView(buf), n = dv.getUint32(80, true);
+  var pos = new Float32Array(n*9), nor = new Float32Array(n*9), o = 84;
+  for(var i=0;i<n;i++){
+    var nx = dv.getFloat32(o,true), ny = dv.getFloat32(o+4,true), nz = dv.getFloat32(o+8,true); o += 12;
+    for(var v=0; v<3; v++){
+      pos[i*9+v*3]   = dv.getFloat32(o,true);
+      pos[i*9+v*3+1] = dv.getFloat32(o+4,true);
+      pos[i*9+v*3+2] = dv.getFloat32(o+8,true);
+      nor[i*9+v*3]   = nx; nor[i*9+v*3+1] = ny; nor[i*9+v*3+2] = nz;
+      o += 12;
+    }
+    o += 2;
+  }
+  var g = new THREE.BufferGeometry();
+  g.setAttribute('position', new THREE.BufferAttribute(pos,3));
+  g.setAttribute('normal',   new THREE.BufferAttribute(nor,3));
+  return g;
+}
+
+// ---------- 载入 ----------
+var meshes = {}, shellMat = null, offset = new THREE.Vector3(), loaded = 0;
+var gearPivot = null;
+// 模型坐标 -> 世界坐标：world.x = X(开合), world.y = Z(相机模块朝下), world.z = -Y(指尖朝前)
+var ROT = new THREE.Matrix4().set(
+  1, 0, 0, 0,
+  0, 0, 1, 0,
+  0,-1, 0, 0,
+  0, 0, 0, 1);
+var GEAR_AXIS_M = new THREE.Vector3(0, -18, 0);   // 齿轮轴线上的点(模型坐标)
+var loadEl = document.getElementById('load'), loadB = document.getElementById('loadB'), loadT = document.getElementById('loadT');
+
+function finishLoad(){
+  // 以 shell 组包围盒中心为公共原点
+  var bb = new THREE.Box3().setFromObject(meshes.shell);
+  bb.getCenter(offset);
+  var pivotW = GEAR_AXIS_M.clone().applyMatrix4(ROT).sub(offset);
+  gearPivot = new THREE.Object3D();
+  gearPivot.position.copy(pivotW);
+  scene.add(gearPivot);
+  GROUPS.forEach(function(g){
+    var m = meshes[g.name];
+    m.geometry.translate(-offset.x, -offset.y, -offset.z);
+    if(g.name === 'gear'){
+      m.geometry.translate(-pivotW.x, -pivotW.y, -pivotW.z);
+      gearPivot.add(m);
+    }
+    m.geometry.computeBoundingSphere();
+  });
+  grid.position.y = -135;
+  setOpening(OPEN0);
+  loadEl.style.display = 'none';
+  playing = true; playB.textContent = '⏸ 暂停'; playB.classList.add('on');
+  applyCam(); animate();
+}
+
+GROUPS.forEach(function(g, idx){
+  fetch(g.f).then(function(r){
+    if(!r.ok) throw new Error(g.f + ' HTTP ' + r.status);
+    return r.arrayBuffer();
+  }).then(function(buf){
+    var geo = parseSTL(buf);
+    geo.applyMatrix4(ROT);
+    var mat;
+    if(g.op < 1){
+      mat = new THREE.MeshPhongMaterial({color:g.c, transparent:true, opacity:g.op,
+        side:THREE.DoubleSide, depthWrite:false, shininess:60, specular:0x333333});
+      shellMat = mat;
+    }else{
+      mat = new THREE.MeshPhongMaterial({color:g.c, shininess:48, specular:0x2a2a2a});
+    }
+    var m = new THREE.Mesh(geo, mat);
+    m.renderOrder = g.op < 1 ? 2 : 1;
+    meshes[g.name] = m; scene.add(m);
+    loaded++;
+    loadB.style.width = (loaded/GROUPS.length*100)+'%';
+    loadT.textContent = '载入几何 ' + loaded + '/' + GROUPS.length + ' …';
+    if(loaded === GROUPS.length) finishLoad();
+  }).catch(function(err){
+    loadT.innerHTML = '载入失败：' + err.message +
+      '<br><span style="color:#889">若以 file:// 直接打开本页，浏览器会禁止读取本地 STL；请通过本地服务器或已发布的网址访问。</span>';
+  });
+});
+
+// ---------- 开闭状态 ----------
+var delta = 0;             // 单侧位移 mm（相对模型位姿）
+function setOpening(open){
+  delta = (open - OPEN0)/2;
+  delta = Math.max(DMIN, Math.min(DMAX, delta));
+  if(meshes.left)  meshes.left.position.x  = -delta;
+  if(meshes.right) meshes.right.position.x =  delta;
+  if(gearPivot)    gearPivot.rotation.z    =  delta / RPITCH;
+  document.getElementById('openV').textContent = (OPEN0 + 2*delta).toFixed(1);
+  document.getElementById('strokeV').textContent = (delta>=0?'+':'') + delta.toFixed(1);
+  var r = document.getElementById('openR');
+  if(Math.abs(parseFloat(r.value) - (OPEN0+2*delta)) > 0.05) r.value = (OPEN0+2*delta).toFixed(1);
+}
+document.getElementById('openR').addEventListener('input', function(e){
+  playing = false; playB.textContent = '▶ 播放'; playB.classList.remove('on');
+  setOpening(parseFloat(e.target.value));
+});
+
+// ---------- UI ----------
+var playing = false, autoRot = false, xray = true;
+var playB = document.getElementById('playB');
+playB.addEventListener('click', function(){
+  playing = !playing;
+  playB.textContent = playing ? '⏸ 暂停' : '▶ 播放';
+  playB.classList.toggle('on', playing);
+});
+document.getElementById('rotB').addEventListener('click', function(){
+  autoRot = !autoRot; this.classList.toggle('on', autoRot);
+});
+document.getElementById('xrayB').addEventListener('click', function(){
+  xray = !xray; this.classList.toggle('on', xray);
+  if(shellMat){ shellMat.opacity = xray ? 0.22 : 1.0; shellMat.transparent = xray; shellMat.depthWrite = !xray; }
+  if(meshes.shell) meshes.shell.renderOrder = xray ? 2 : 1;
+});
+document.getElementById('resetB').addEventListener('click', function(){
+  ctl.target.set(0,0,0); ctl.r = 430; ctl.q.copy(ctl.q0); applyCam();
+});
+
+// ---------- 主循环 ----------
+var t0 = performance.now();
+function animate(){
+  requestAnimationFrame(animate);
+  var t = (performance.now()-t0)/1000;
+  if(playing){
+    // 在 [DMIN, DMAX] 间平滑往返
+    var u = (Math.sin(t*0.9 - Math.PI/2) + 1)/2;          // 0..1
+    var d = DMIN + u*(DMAX-DMIN);
+    setOpening(OPEN0 + 2*d);
+  }
+  if(autoRot && !drag){ ctl.q.premultiply(new THREE.Quaternion().setFromAxisAngle(UP, 0.0035)); applyCam(); }
+  renderer.render(scene, camera);
+}
+addEventListener('resize', function(){
+  camera.aspect = innerWidth/innerHeight; camera.updateProjectionMatrix();
+  renderer.setSize(innerWidth, innerHeight);
+});
+applyCam();
+})();
+</script>
+</body>
+</html>
